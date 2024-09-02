@@ -1,31 +1,33 @@
 import express from 'express';
-import tasks from './data/mock.js';
+import mongoose from 'mongoose';
+import mockTasks from './data/mock.js';
+import 'dotenv/config';
+import Task from './models/Task.js';
+
+mongoose.connect(process.env.DATABASE_URL).then(() => console.log('db connected'));
 
 const app = express();
 // NOTE: Express 애플리케이션에서 JSON 형태의 요청 body를 파싱하기 위해 사용되는 미들웨어
 app.use(express.json());
 
-app.get('/tasks', (req, res) => {
+app.get('/tasks', async (req, res) => {
     // NOTE: 쿼리 스트링
     const sort = req.query.sort;
-    const count = Number(req.query.count);
+    const count = Number(req.query.count) || 0;
 
-    const getSortedTasks = sort === 'oldest'
-        ? (a, b) => a.createdAt - b.createdAt
-        : (a, b) => b.createdAt - a.createdAt;
+    const tasks = await Task
+        .find()
+        .sort({
+            createdAt: sort === 'oldest' ? 'asc' : 'desc'
+        })
+        .limit(count);
 
-    let newTasks = tasks.sort(getSortedTasks);
-
-    if (count) {
-        newTasks = newTasks.slice(0, count);
-    }
-    // NOTE: res.send() : 자바스크립트의 객체를 JSON으로 리턴함
-    res.send(newTasks);
+    res.send(tasks);
 });
 
-app.get('/tasks/:id', (req, res) => {
+app.get('/tasks/:id', async (req, res) => {
     const id = Number(req.params.id);
-    const task = tasks.find(t => t.id === id);
+    const task = await Task.findById(id);
 
     if (task) {
         res.send(task);
@@ -37,21 +39,21 @@ app.get('/tasks/:id', (req, res) => {
 app.post('/tasks', (req, res) => {
     const newTask = req.body;
 
-    const ids = tasks.map(t => t.id);
+    const ids = mockTasks.map(t => t.id);
 
     newTask.id = Math.max(...ids) + 1;
     newTask.isComplete = false;
     newTask.createdAt = new Date();
     newTask.updatedAt = new Date();
 
-    tasks.push(newTask);
+    mockTasks.push(newTask);
 
     res.status(201).send(newTask)
 });
 
 app.patch('/tasks/:id', (req, res) => {
     const id = Number(req.params.id);
-    const task = tasks.find(t => t.id === id);
+    const task = mockTasks.find(t => t.id === id);
 
     if (task) {
         Object.keys(req.body).forEach(key => {
@@ -67,10 +69,10 @@ app.patch('/tasks/:id', (req, res) => {
 
 app.delete('/tasks/:id', (req, res) => {
     const id = Number(req.params.id);
-    const idx = tasks.findIndex(t => t.id === id);
+    const idx = mockTasks.findIndex(t => t.id === id);
 
     if (task >= 0) {
-        tasks.splice(idx, 1);
+        mockTasks.splice(idx, 1);
         res.sendStatus(204); // NOTE: status만 보낼때 
     } else {
         res.status(404).send({ message: '해당 task를 찾을 수 없습니다.' })
