@@ -1,14 +1,35 @@
 import express from 'express';
 import mongoose from 'mongoose';
-import mockTasks from './data/mock.js';
+import cors from 'cors';
 import 'dotenv/config';
 import Task from './models/Task.js';
 
 mongoose.connect(process.env.DATABASE_URL).then(() => console.log('db connected'));
 
+const corsOptions = {
+    origin: ['http://127.0.0.1:3000'],
+};
+
 const app = express();
+app.use(cors(corsOptions));
 // NOTE: Express 애플리케이션에서 JSON 형태의 요청 body를 파싱하기 위해 사용되는 미들웨어
 app.use(express.json());
+
+const asyncHandler = (handler) => {
+    return async (req, res) => {
+        try {
+            await handler(req, res);
+        } catch (e) {
+            if (e.name === 'ValidationError') {
+                res.status(400).send({ message: e.message });
+            } else if (e.name === 'CastError') {
+                res.status(404).send({ message: 'cannot find given id' });
+            } else {
+                res.status(500).send({ message: e.message });
+            }
+        }
+    }
+}
 
 app.get('/tasks', async (req, res) => {
     // NOTE: 쿼리 스트링
@@ -25,7 +46,7 @@ app.get('/tasks', async (req, res) => {
     res.send(tasks);
 });
 
-app.get('/tasks/:id', async (req, res) => {
+app.get('/tasks/:id', asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
     const task = await Task.findById(id);
 
@@ -34,45 +55,33 @@ app.get('/tasks/:id', async (req, res) => {
     } else {
         res.status(404).send({ message: '해당 task를 찾을 수 없습니다.' })
     }
-});
+}));
 
-app.post('/tasks', (req, res) => {
-    const newTask = req.body;
-
-    const ids = mockTasks.map(t => t.id);
-
-    newTask.id = Math.max(...ids) + 1;
-    newTask.isComplete = false;
-    newTask.createdAt = new Date();
-    newTask.updatedAt = new Date();
-
-    mockTasks.push(newTask);
-
+app.post('/tasks', asyncHandler(async (req, res) => {
+    const newTask = await Task.create(req.body);
     res.status(201).send(newTask)
-});
+}));
 
-app.patch('/tasks/:id', (req, res) => {
+app.patch('/tasks/:id', async (req, res) => {
     const id = Number(req.params.id);
-    const task = mockTasks.find(t => t.id === id);
+    const task = await Task.findById(id);
 
     if (task) {
         Object.keys(req.body).forEach(key => {
             task[key] = req.body[key];
         });
-        task.updatedAt = new Date();
-
+        await task.save();
         res.send(task);
     } else {
         res.status(404).send({ message: '해당 task를 찾을 수 없습니다.' })
     }
 });
 
-app.delete('/tasks/:id', (req, res) => {
+app.delete('/tasks/:id', async (req, res) => {
     const id = Number(req.params.id);
-    const idx = mockTasks.findIndex(t => t.id === id);
+    const task = await Task.findByIdAndDelete(id);
 
-    if (task >= 0) {
-        mockTasks.splice(idx, 1);
+    if (task) {
         res.sendStatus(204); // NOTE: status만 보낼때 
     } else {
         res.status(404).send({ message: '해당 task를 찾을 수 없습니다.' })
